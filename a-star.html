@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A*</title>
+    <style>
+        html {
+            text-align: center;
+        }
+        body {
+            background-color: grey;
+            padding: auto;
+            margin: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const SIMULATION_DELAY = 50;
+        const SIMULATION_START = 3000;
+        const WALL_PROBABILITY = 0.3
+
+        function randomInt(min, max) {
+            min = Math.floor(min);
+            max = Math.floor(max);
+            return Math.floor(Math.random() * (max - min + 1) + min);
+        }
+
+        class Tile {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.parent = null;
+                this.cost = 0;
+                this.combinedCost = 0;
+            }
+
+            isSame(otherTile) {
+                return this.x === otherTile.x && this.y === otherTile.y;
+            }
+        }
+
+        class Board {
+            constructor(size) {
+                this.canvas = document.getElementById("canvas");
+                let canvasSize = Math.min(window.innerHeight, window.innerWidth);
+                this.canvas.width = canvasSize;
+                this.canvas.height = canvasSize;
+                this.ctx = this.canvas.getContext("2d");
+                
+                this.size = size;
+                this.end = this.randomTile();
+                this.start = this.randomTile();
+                this.start.combinedCost = this.calculateCombinedCost(this.start);
+                this.walls = [];
+                let wallProbability = WALL_PROBABILITY;
+                for (let x = 0; x < this.size; x++)
+                {
+                    for (let y = 0; y < this.size; y++)
+                    {
+                        let wall = new Tile(x, y);
+                        if (Math.random() < wallProbability && !(wall.isSame(this.start) || wall.isSame(this.end)))
+                            this.walls.push(wall);
+                    }
+                }
+            }
+
+            randomTile() {
+                return new Tile(randomInt(0, this.size - 1), randomInt(0, this.size - 1));
+            }
+
+            calculateCost(tile) {
+                if (tile.parent === null)
+                    return 0;
+
+                if (tile.parent.cost === null)
+                    return 1;
+
+                return tile.parent.cost + 1;
+            }
+
+            calculateHeuristic(tile) {
+                return Math.abs(tile.x - this.end.x) + Math.abs(tile.y - this.end.y);
+            }
+
+            calculateCombinedCost(tile) {
+                return this.calculateCost(tile) + this.calculateHeuristic(tile);
+            }
+
+            aStarLoop(openTiles, closedTiles) {
+                openTiles.sort((tileA, tileB) => {
+                    if (tileA.combinedCost < tileB.combinedCost)
+                        return 1;
+                    if (tileA.combinedCost > tileB.combinedCost)
+                        return -1;
+                    return 0;
+                });
+
+                let best = openTiles.pop();
+
+                if (best.isSame(this.end))
+                {
+                    console.log(`Done with cost of ${best.cost}`);
+                    console.log(best);
+                    return;
+                }
+
+                let addTileIfBetter = (tile) => {
+
+                    if (tile.x < 0 || tile.y < 0 || tile.x > this.size - 1 || tile.y > this.size - 1)
+                        return;
+
+                    tile.parent = best;
+                    tile.cost = this.calculateCost(tile);
+                    tile.combinedCost = this.calculateCombinedCost(tile);
+
+                    let shouldPush = true;
+
+                    this.walls.forEach(wall => {
+                        if (tile.isSame(wall))
+                        {
+                            shouldPush = false;
+                            return;
+                        }
+                    });
+
+                    closedTiles.forEach(closedTile => {
+                        if (tile.isSame(closedTile))
+                        {
+                            shouldPush = false;
+                            return;
+                        }
+                    });
+
+                    openTiles.forEach((openTile, index) => {
+                        if (tile.isSame(openTile)) {
+                            if (tile.cost < openTile.cost)
+                                openTiles.slice(index);
+
+                            else
+                                shouldPush = false;
+
+                            return;
+                        }
+                    });
+
+                    if (shouldPush)
+                        openTiles.push(tile);
+                };
+
+                addTileIfBetter(new Tile(best.x - 1, best.y));
+                addTileIfBetter(new Tile(best.x + 1, best.y));
+                addTileIfBetter(new Tile(best.x, best.y - 1));
+                addTileIfBetter(new Tile(best.x, best.y + 1));
+
+                closedTiles.push(best);
+
+                this.render(best, openTiles, closedTiles);
+
+                if (openTiles.length > 0)
+                    setTimeout(() => { this.aStarLoop(openTiles, closedTiles) }, SIMULATION_DELAY);
+
+                else
+                    console.log("No way");
+            }
+
+            aStar() {
+                let closedTiles = [];
+                let openTiles = [];
+                openTiles.push(this.start);
+
+                setTimeout(() => { this.aStarLoop(openTiles, closedTiles) }, SIMULATION_START);
+            }
+
+            renderTile(tile, style = null) {
+                if (style !== null)
+                    this.ctx.fillStyle = style;
+
+                let tileWidth = this.canvas.width / this.size;
+                let tileHeight = this.canvas.height / this.size;
+                this.ctx.fillRect(tile.x * tileWidth, tile.y * tileHeight, tileWidth, tileHeight);
+
+                if (tile.parent !== null)
+                    this.renderTile(tile.parent);
+            }
+
+            clear() {
+                this.ctx.fillStyle = "white";
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+
+            render(tile = null, openTiles = null, closedTiles = null) {
+                this.clear();
+
+                if (closedTiles)
+                {
+                    closedTiles.forEach(closedTile => {
+                        this.renderTile(closedTile, "pink");
+                    });
+                }
+
+                if (openTiles)
+                {
+                    openTiles.forEach(openTile => {
+                        this.renderTile(openTile, "yellow");
+                    });
+                }
+
+                if (tile !== null)
+                    this.renderTile(tile, "blue");
+
+                this.walls.forEach(wall => {
+                    this.renderTile(wall, "black");
+                });
+
+                this.ctx.fillStyle = "green";
+                this.renderTile(this.start);
+
+                this.ctx.fillStyle = "red";
+                this.renderTile(this.end);
+            }
+        }
+
+        class AStar {
+            constructor(board) {
+                this.board = board;
+                this.openTiles = [];
+                this.closedTiles = [];
+            }
+        }
+
+
+
+        let board = new Board(randomInt(5, 50));
+        board.render();
+
+        console.log(board);
+
+        board.aStar();
+
+        
+    </script>
+</body>
+
+</html>
